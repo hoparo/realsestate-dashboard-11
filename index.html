@@ -10,6 +10,8 @@
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <!-- PapaParse (CSV 파싱 라이브러리) -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+    <!-- PptxGenJS (PPT 생성 라이브러리) -->
+    <script src="https://cdn.jsdelivr.net/gh/gitbrent/PptxGenJS/dist/pptxgen.bundle.js"></script>
     <style>
         @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
         body { font-family: 'Pretendard', sans-serif; background-color: #f3f4f6; }
@@ -26,16 +28,33 @@
 
     <div class="max-w-7xl mx-auto">
         <!-- 헤더 영역 -->
-        <header class="mb-8 flex justify-between items-end border-b pb-4 border-gray-200">
+        <header class="mb-8 flex flex-col md:flex-row justify-between items-start md:items-end border-b pb-4 border-gray-200 gap-4">
             <div>
                 <h1 class="text-3xl font-bold text-gray-900">우리 동네 아파트 실거래가 대시보드</h1>
                 <p class="text-sm text-gray-500 mt-2">안정적인 자산 관리를 위한 실거래가 모니터링 시스템</p>
             </div>
-            <div id="loadingStatus" class="flex items-center text-green-600 font-medium">
-                <div class="spinner mr-2"></div>
-                데이터 불러오는 중...
+            <div class="flex items-center space-x-4">
+                <div id="loadingStatus" class="flex items-center text-green-600 font-medium">
+                    <div class="spinner mr-2"></div>
+                    데이터 불러오는 중...
+                </div>
+                <!-- PPT 다운로드 버튼 (초기엔 숨김) -->
+                <button id="downloadPptBtn" style="display: none;" class="bg-green-600 hover:bg-green-700 text-white px-5 py-2.5 rounded-lg text-sm font-semibold transition-colors flex items-center shadow-sm focus:outline-none focus:ring-2 focus:ring-green-500 focus:ring-offset-2">
+                    <svg class="w-5 h-5 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"></path></svg>
+                    PPT로 다운로드
+                </button>
             </div>
         </header>
+
+        <!-- 필터 영역 (법정동 단일 필터로 단순화) -->
+        <div class="mb-6 flex justify-end">
+            <div class="flex items-center bg-white p-3 rounded-xl shadow-sm border border-gray-100">
+                <label for="dongFilter" class="mr-3 font-semibold text-gray-700 text-sm">동네(법정동) 선택:</label>
+                <select id="dongFilter" class="border border-gray-300 rounded-lg px-4 py-2 text-gray-700 focus:outline-none focus:ring-2 focus:ring-green-500 bg-gray-50 text-sm shadow-sm cursor-pointer min-w-[180px]">
+                    <option value="전체">전체 (모든 동네)</option>
+                </select>
+            </div>
+        </div>
 
         <!-- 요약 카드 영역 -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
@@ -65,7 +84,6 @@
                     <h3 class="text-sm font-semibold text-gray-500">최저 거래가격</h3>
                     <span class="text-xl" aria-hidden="true">📉</span>
                 </div>
-                <!-- 테마 색상과 구분되도록 파란색으로 변경 -->
                 <p class="text-2xl font-bold text-blue-500" id="minPrice">-</p> 
             </div>
         </div>
@@ -74,7 +92,8 @@
         <div class="bg-white rounded-xl shadow-sm p-6 mb-8 border border-gray-100">
             <h2 class="text-lg font-bold text-gray-800 mb-4">월별 평균 거래가격 추이</h2>
             <div class="relative h-72 w-full">
-                <canvas id="monthlyChart"></canvas>
+                <!-- PPT 캡처 시 배경을 흰색으로 고정 -->
+                <canvas id="monthlyChart" style="background-color: #ffffff;"></canvas>
             </div>
         </div>
 
@@ -112,8 +131,9 @@
         const CSV_URL = 'https://docs.google.com/spreadsheets/d/e/2PACX-1vSa_XKbEgqC9SnQG8y3Ol_rXQn5-eyr3PqnrNyB08eEKQB7EbK-9iop_dBEJsWBipz_L3_KhfUouSoE/pub?gid=492507536&single=true&output=csv';
         
         let chartInstance = null;
+        let allData = []; // 전체 데이터를 보관할 전역 변수
 
-        // 숫자 포맷 함수 (예: 10,000)
+        // 숫자 포맷 함수
         const formatNumber = (num) => new Intl.NumberFormat('ko-KR').format(num);
 
         // 거래일자에서 'YYYY-MM' 형식 추출 함수
@@ -138,8 +158,14 @@
                     header: true,
                     skipEmptyLines: true,
                     complete: function(results) {
-                        processData(results.data);
+                        allData = results.data;
+                        
+                        populateDongDropdown(allData); // 법정동 단일 필터 생성
+                        processData(allData, '전체'); // 초기 데이터 렌더링
+                        
+                        // 데이터 로드 완료 후 로딩바 숨기고 PPT 다운로드 버튼 표시
                         document.getElementById('loadingStatus').style.display = 'none';
+                        document.getElementById('downloadPptBtn').style.display = 'flex';
                     },
                     error: function(error) {
                         console.error('파싱 에러:', error);
@@ -152,8 +178,34 @@
             }
         }
 
-        // 데이터 가공 및 UI 업데이트
-        function processData(data) {
+        // 법정동 드롭다운 생성 및 이벤트 연결
+        function populateDongDropdown(data) {
+            const dongSelect = document.getElementById('dongFilter');
+            const dongs = new Set();
+            
+            data.forEach(row => {
+                const dong = row['법정동'];
+                if (dong && dong.trim() !== '') {
+                    dongs.add(dong.trim());
+                }
+            });
+
+            // 가나다순 정렬하여 옵션 추가
+            Array.from(dongs).sort().forEach(dong => {
+                const option = document.createElement('option');
+                option.value = dong;
+                option.textContent = dong;
+                dongSelect.appendChild(option);
+            });
+
+            // 동네 변경 시 해당 동네만 필터링하여 데이터 재가공
+            dongSelect.addEventListener('change', (e) => {
+                processData(allData, e.target.value);
+            });
+        }
+
+        // 데이터 가공 및 UI 업데이트 (법정동 필터만 적용)
+        function processData(data, selectedDong) {
             let totalCount = 0;
             let sumPrice = 0;
             let maxPrice = 0;
@@ -162,54 +214,51 @@
             const monthlyData = {};
             const cleanData = [];
 
-            data.forEach(row => {
-                // 가격 데이터 정제
+            // 선택된 법정동이 있으면 해당 데이터만 추출
+            const targetData = selectedDong === '전체' 
+                ? data 
+                : data.filter(row => row['법정동'] && row['법정동'].trim() === selectedDong);
+
+            targetData.forEach(row => {
                 const priceStr = row['거래금액(만원)'] || '0';
                 const price = parseInt(priceStr.replace(/,/g, ''), 10);
                 
-                if (isNaN(price) || price === 0) return; // 유효하지 않은 데이터 건너뛰기
+                if (isNaN(price) || price === 0) return;
 
                 const month = extractMonth(row['거래일자']);
                 
-                // 요약 통계 계산
                 totalCount++;
                 sumPrice += price;
                 if (price > maxPrice) maxPrice = price;
                 if (price < minPrice) minPrice = price;
 
-                // 월별 데이터 집계
                 if (!monthlyData[month]) {
                     monthlyData[month] = { sum: 0, count: 0 };
                 }
                 monthlyData[month].sum += price;
                 monthlyData[month].count++;
 
-                // 테이블용 데이터 보관
                 cleanData.push({ ...row, price, month });
             });
 
-            // 예외 처리: 데이터가 없을 경우
             if (totalCount === 0) minPrice = 0;
             
-            const avgPrice = Math.round(sumPrice / totalCount);
+            const avgPrice = totalCount > 0 ? Math.round(sumPrice / totalCount) : 0;
 
-            // 1. 요약 카드 업데이트
+            // 요약 카드 텍스트 업데이트
             document.getElementById('totalCount').textContent = `${formatNumber(totalCount)}건`;
             document.getElementById('avgPrice').textContent = `${formatNumber(avgPrice)}만원`;
             document.getElementById('maxPrice').textContent = `${formatNumber(maxPrice)}만원`;
             document.getElementById('minPrice').textContent = `${formatNumber(minPrice)}만원`;
 
-            // 2. 차트 렌더링
+            // 차트 및 테이블 렌더링
             renderChart(monthlyData);
-
-            // 3. 테이블 렌더링 (최근 거래일자 순 정렬을 위해 원본 유지 혹은 정렬)
             renderTable(cleanData.reverse()); 
         }
 
+        // 차트 렌더링 함수
         function renderChart(monthlyData) {
             const ctx = document.getElementById('monthlyChart').getContext('2d');
-            
-            // 월별 정렬
             const sortedMonths = Object.keys(monthlyData).sort();
             const labels = sortedMonths;
             const dataPoints = sortedMonths.map(month => {
@@ -217,7 +266,7 @@
             });
 
             if (chartInstance) {
-                chartInstance.destroy(); // 기존 차트가 있으면 제거
+                chartInstance.destroy();
             }
 
             chartInstance = new Chart(ctx, {
@@ -227,8 +276,8 @@
                     datasets: [{
                         label: '월별 평균 거래가격 (만원)',
                         data: dataPoints,
-                        borderColor: '#16a34a', // 초록색 선
-                        backgroundColor: 'rgba(22, 163, 74, 0.1)', // 초록색 배경
+                        borderColor: '#16a34a',
+                        backgroundColor: 'rgba(22, 163, 74, 0.1)',
                         borderWidth: 2,
                         pointBackgroundColor: '#ffffff',
                         pointBorderColor: '#16a34a',
@@ -241,6 +290,9 @@
                 options: {
                     responsive: true,
                     maintainAspectRatio: false,
+                    animation: {
+                        duration: 0 // PPT 캡처 시 애니메이션 렌더링 충돌 방지
+                    },
                     plugins: {
                         legend: { display: false },
                         tooltip: {
@@ -269,19 +321,19 @@
             });
         }
 
+        // 테이블 렌더링 함수
         function renderTable(data) {
             const tbody = document.getElementById('tableBody');
-            tbody.innerHTML = ''; // 초기화
+            tbody.innerHTML = '';
 
             const displayData = data.slice(0, 100); 
 
             displayData.forEach(row => {
                 const tr = document.createElement('tr');
-                // 짝수/홀수 행 배경색(줄무늬) 및 마우스 오버 시 강조 색상 적용
-                tr.className = 'bg-white even:bg-gray-50 hover:bg-green-100 transition-colors duration-150'; 
+                tr.className = 'bg-white even:bg-gray-50 hover:bg-green-50 transition-colors duration-150 cursor-pointer'; 
                 
-                // 5억(50,000만원) 이상일 경우 빨간색으로 강조
-                const priceClass = row.price >= 50000 ? 'text-red-600 font-bold' : 'text-green-600 font-semibold';
+                // 5억(50,000만원) 이상이면 빨간색 강조
+                const priceClass = row.price >= 50000 ? 'text-red-500 font-bold' : 'text-green-600 font-semibold';
 
                 tr.innerHTML = `
                     <td class="p-4 whitespace-nowrap">${row['거래일자'] || '-'}</td>
@@ -289,12 +341,91 @@
                     <td class="p-4">${row['법정동'] || '-'}</td>
                     <td class="p-4">${row['전용면적(㎡)'] || '-'}</td>
                     <td class="p-4">${row['층'] || '-'}</td>
-                    <td class="p-4 text-right ${priceClass}">${formatNumber(row.price)}</td> <!-- 가격 조건부 포맷팅 -->
+                    <td class="p-4 text-right ${priceClass}">${formatNumber(row.price)}</td>
                     <td class="p-4">${row['건축년도'] || '-'}</td>
                 `;
                 tbody.appendChild(tr);
             });
         }
+
+        // ================= PPT 다운로드 기능 =================
+        document.getElementById('downloadPptBtn').addEventListener('click', async () => {
+            const btn = document.getElementById('downloadPptBtn');
+            const originalHTML = btn.innerHTML;
+            
+            // 로딩 상태 UI 처리
+            btn.innerHTML = `
+                <div class="spinner mr-2" style="width: 20px; height: 20px; border-width: 2px; border-left-color: #fff;"></div>
+                생성 중...
+            `;
+            btn.disabled = true;
+
+            try {
+                let pptx = new PptxGenJS();
+                pptx.layout = 'LAYOUT_16x9';
+
+                let slide = pptx.addSlide();
+                slide.background = { color: "F3F4F6" };
+
+                // PPT 제목
+                slide.addText('우리 동네 아파트 실거래가 모니터링 리포트', { 
+                    x: 0.5, y: 0.5, w: '90%', h: 0.6, 
+                    fontSize: 24, bold: true, color: '1F2937' 
+                });
+
+                // 적용된 필터(법정동) 텍스트
+                const dong = document.getElementById('dongFilter').value;
+                const filterText = dong !== '전체' ? `필터 기준: 법정동(${dong})` : `필터 기준: 전체 데이터`;
+
+                slide.addText(filterText, { 
+                    x: 0.5, y: 1.1, w: '90%', h: 0.3, 
+                    fontSize: 12, color: '6B7280' 
+                });
+
+                // 카드 데이터 가져오기
+                const totalCount = document.getElementById('totalCount').innerText;
+                const avgPrice = document.getElementById('avgPrice').innerText;
+                const maxPrice = document.getElementById('maxPrice').innerText;
+                const minPrice = document.getElementById('minPrice').innerText;
+
+                // 요약 카드 PPT 렌더링
+                const boxY = 1.7;
+                slide.addShape(pptx.ShapeType.rect, { x: 0.5, y: boxY, w: 2.2, h: 1, fill: { color: "FFFFFF" }, line: { color: "E5E7EB", width: 1 } });
+                slide.addText('🏠 전체 거래 건수', { x: 0.5, y: boxY + 0.1, w: 2.2, h: 0.3, fontSize: 10, color: '6B7280', align: 'center' });
+                slide.addText(totalCount, { x: 0.5, y: boxY + 0.5, w: 2.2, h: 0.4, fontSize: 18, bold: true, color: '111827', align: 'center' });
+
+                slide.addShape(pptx.ShapeType.rect, { x: 2.9, y: boxY, w: 2.2, h: 1, fill: { color: "FFFFFF" }, line: { color: "E5E7EB", width: 1 } });
+                slide.addText('💰 평균 거래가격', { x: 2.9, y: boxY + 0.1, w: 2.2, h: 0.3, fontSize: 10, color: '6B7280', align: 'center' });
+                slide.addText(avgPrice, { x: 2.9, y: boxY + 0.5, w: 2.2, h: 0.4, fontSize: 18, bold: true, color: '16A34A', align: 'center' });
+
+                slide.addShape(pptx.ShapeType.rect, { x: 5.3, y: boxY, w: 2.2, h: 1, fill: { color: "FFFFFF" }, line: { color: "E5E7EB", width: 1 } });
+                slide.addText('📈 최고 거래가격', { x: 5.3, y: boxY + 0.1, w: 2.2, h: 0.3, fontSize: 10, color: '6B7280', align: 'center' });
+                slide.addText(maxPrice, { x: 5.3, y: boxY + 0.5, w: 2.2, h: 0.4, fontSize: 18, bold: true, color: 'EF4444', align: 'center' });
+
+                slide.addShape(pptx.ShapeType.rect, { x: 7.7, y: boxY, w: 2.2, h: 1, fill: { color: "FFFFFF" }, line: { color: "E5E7EB", width: 1 } });
+                slide.addText('📉 최저 거래가격', { x: 7.7, y: boxY + 0.1, w: 2.2, h: 0.3, fontSize: 10, color: '6B7280', align: 'center' });
+                slide.addText(minPrice, { x: 7.7, y: boxY + 0.5, w: 2.2, h: 0.4, fontSize: 18, bold: true, color: '3B82F6', align: 'center' });
+
+                // 차트 이미지 캡처
+                if (chartInstance) {
+                    const chartImage = chartInstance.toBase64Image();
+                    slide.addShape(pptx.ShapeType.rect, { x: 0.5, y: 3.0, w: 9.4, h: 4.0, fill: { color: "FFFFFF" }, line: { color: "E5E7EB", width: 1 } });
+                    slide.addText('월별 평균 거래가격 추이', { x: 0.7, y: 3.2, w: '80%', h: 0.3, fontSize: 12, bold: true, color: '374151' });
+                    slide.addImage({ data: chartImage, x: 0.7, y: 3.6, w: 9.0, h: 3.2 });
+                }
+
+                const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
+                const fileName = `TOL_실거래가_리포트_${today}.pptx`;
+                await pptx.writeFile({ fileName: fileName });
+
+            } catch (error) {
+                console.error("PPT 생성 오류:", error);
+                alert("PPT 다운로드 중 오류가 발생했습니다.");
+            } finally {
+                btn.innerHTML = originalHTML;
+                btn.disabled = false;
+            }
+        });
 
         // 페이지 로드 시 실행
         document.addEventListener('DOMContentLoaded', initDashboard);
@@ -302,3 +433,4 @@
     </script>
 </body>
 </html>
+```
