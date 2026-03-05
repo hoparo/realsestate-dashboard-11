@@ -40,19 +40,31 @@
         <!-- 요약 카드 영역 -->
         <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-                <h3 class="text-sm font-semibold text-gray-500 mb-1">전체 거래 건수</h3>
+                <div class="flex justify-between items-center mb-1">
+                    <h3 class="text-sm font-semibold text-gray-500">전체 거래 건수</h3>
+                    <span class="text-xl" aria-hidden="true">🏠</span>
+                </div>
                 <p class="text-2xl font-bold text-gray-900" id="totalCount">-</p>
             </div>
             <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-                <h3 class="text-sm font-semibold text-gray-500 mb-1">평균 거래가격</h3>
+                <div class="flex justify-between items-center mb-1">
+                    <h3 class="text-sm font-semibold text-gray-500">평균 거래가격</h3>
+                    <span class="text-xl" aria-hidden="true">💰</span>
+                </div>
                 <p class="text-2xl font-bold text-green-600" id="avgPrice">-</p>
             </div>
             <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-                <h3 class="text-sm font-semibold text-gray-500 mb-1">최고 거래가격</h3>
+                <div class="flex justify-between items-center mb-1">
+                    <h3 class="text-sm font-semibold text-gray-500">최고 거래가격</h3>
+                    <span class="text-xl" aria-hidden="true">📈</span>
+                </div>
                 <p class="text-2xl font-bold text-red-500" id="maxPrice">-</p>
             </div>
             <div class="bg-white rounded-xl shadow-sm p-6 border border-gray-100">
-                <h3 class="text-sm font-semibold text-gray-500 mb-1">최저 거래가격</h3>
+                <div class="flex justify-between items-center mb-1">
+                    <h3 class="text-sm font-semibold text-gray-500">최저 거래가격</h3>
+                    <span class="text-xl" aria-hidden="true">📉</span>
+                </div>
                 <!-- 테마 색상과 구분되도록 파란색으로 변경 -->
                 <p class="text-2xl font-bold text-blue-500" id="minPrice">-</p> 
             </div>
@@ -265,15 +277,19 @@
 
             displayData.forEach(row => {
                 const tr = document.createElement('tr');
-                tr.className = 'hover:bg-green-50 transition-colors duration-150'; // Hover 시 초록색 배경
+                // 짝수/홀수 행 배경색(줄무늬) 및 마우스 오버 시 강조 색상 적용
+                tr.className = 'bg-white even:bg-gray-50 hover:bg-green-100 transition-colors duration-150'; 
                 
+                // 5억(50,000만원) 이상일 경우 빨간색으로 강조
+                const priceClass = row.price >= 50000 ? 'text-red-600 font-bold' : 'text-green-600 font-semibold';
+
                 tr.innerHTML = `
                     <td class="p-4 whitespace-nowrap">${row['거래일자'] || '-'}</td>
                     <td class="p-4 font-medium text-gray-900">${row['아파트명'] || '-'}</td>
                     <td class="p-4">${row['법정동'] || '-'}</td>
                     <td class="p-4">${row['전용면적(㎡)'] || '-'}</td>
                     <td class="p-4">${row['층'] || '-'}</td>
-                    <td class="p-4 text-right font-semibold text-green-600">${formatNumber(row.price)}</td> <!-- 가격 텍스트 초록색 -->
+                    <td class="p-4 text-right ${priceClass}">${formatNumber(row.price)}</td> <!-- 가격 조건부 포맷팅 -->
                     <td class="p-4">${row['건축년도'] || '-'}</td>
                 `;
                 tbody.appendChild(tr);
